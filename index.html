@@ -1,11 +1,485 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="UTF-8">
-    <title>Meine erste Webseite</title>
-  </head>
-  <body>
-    <h1>Hallo Welt 🌍</h1>
-    <p>Meine erste Website ist online!</p>
-  </body>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Live GPS Tracker</title>
+  <script src="https://cesium.com/downloads/cesiumjs/releases/1.95/Build/Cesium/Cesium.js"></script>
+  <link href="https://cesium.com/downloads/cesiumjs/releases/1.95/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+  
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+  
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+    }
+    #cesiumContainer {
+      width: 100%;
+      height: 100%;
+    }
+    .cesium-viewer-toolbar,
+    .cesium-viewer-animationContainer,
+    .cesium-viewer-timelineContainer,
+    .cesium-viewer-bottom,
+    .cesium-viewer-fullscreenButton {
+      display: none !important;
+    }
+    #status {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(0, 0, 0, 0.85);
+      color: white;
+      padding: 15px;
+      border-radius: 10px;
+      font-size: 14px;
+      z-index: 1000;
+      max-width: 280px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    #status .title {
+      font-weight: bold;
+      font-size: 16px;
+      margin-bottom: 8px;
+    }
+    #status .id {
+      font-size: 11px;
+      opacity: 0.7;
+      margin-top: 8px;
+      word-break: break-all;
+    }
+    #controls {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 10px;
+      z-index: 1000;
+      flex-wrap: wrap;
+      justify-content: center;
+      max-width: 90%;
+    }
+    .btn {
+      background: rgba(0, 150, 255, 0.95);
+      color: white;
+      border: none;
+      padding: 14px 20px;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: bold;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    .btn:active {
+      transform: scale(0.95);
+    }
+    .btn-start { background: rgba(34, 197, 94, 0.95); }
+    .btn-stop { background: rgba(239, 68, 68, 0.95); }
+    .btn-center { background: rgba(59, 130, 246, 0.95); }
+    .btn-reset { background: rgba(249, 115, 22, 0.95); }
+    .btn-share { background: rgba(168, 85, 247, 0.95); }
+    #modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.7);
+      z-index: 2000;
+      align-items: center;
+      justify-content: center;
+    }
+    #modal.show {
+      display: flex;
+    }
+    .modal-content {
+      background: white;
+      padding: 30px;
+      border-radius: 15px;
+      max-width: 500px;
+      width: 90%;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+    }
+    .modal-title {
+      font-size: 20px;
+      font-weight: bold;
+      margin-bottom: 15px;
+      color: #333;
+    }
+    .modal-text {
+      color: #666;
+      margin-bottom: 20px;
+      line-height: 1.5;
+    }
+    .link-box {
+      background: #f3f4f6;
+      padding: 12px;
+      border-radius: 8px;
+      word-break: break-all;
+      font-size: 13px;
+      margin-bottom: 15px;
+      color: #333;
+    }
+    .modal-buttons {
+      display: flex;
+      gap: 10px;
+    }
+    .modal-btn {
+      flex: 1;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      font-weight: bold;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .modal-btn-primary {
+      background: #8b5cf6;
+      color: white;
+    }
+    .modal-btn-secondary {
+      background: #e5e7eb;
+      color: #333;
+    }
+  </style>
+</head>
+<body>
+  <div id="cesiumContainer"></div>
+  
+  <div id="status">
+    <div class="title">🔄 Initialisiere...</div>
+    <div id="statusText"></div>
+    <div class="id" id="trackingId"></div>
+  </div>
+
+  <div id="controls"></div>
+
+  <div id="modal">
+    <div class="modal-content">
+      <div class="modal-title">📤 Link zum Teilen</div>
+      <div class="modal-text">Teile diesen Link, damit andere deine Live-Position sehen können:</div>
+      <div class="link-box" id="shareLink"></div>
+      <div class="modal-buttons">
+        <button class="modal-btn modal-btn-primary" onclick="copyLink()">📋 Link kopieren</button>
+        <button class="modal-btn modal-btn-secondary" onclick="closeModal()">Schließen</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ⚠️ WICHTIG: Firebase Konfiguration
+    // Gehe zu https://console.firebase.google.com/
+    // Erstelle ein neues Projekt (kostenlos)
+    // Füge hier deine Firebase Config ein:
+    const firebaseConfig = {
+      apiKey: "DEINE_API_KEY",
+      authDomain: "DEIN_PROJECT.firebaseapp.com",
+      databaseURL: "https://DEIN_PROJECT.firebaseio.com",
+      projectId: "DEIN_PROJECT",
+      storageBucket: "DEIN_PROJECT.appspot.com",
+      messagingSenderId: "DEINE_SENDER_ID",
+      appId: "DEINE_APP_ID"
+    };
+
+    // Firebase initialisieren
+    let database;
+    try {
+      firebase.initializeApp(firebaseConfig);
+      database = firebase.database();
+    } catch (e) {
+      console.error("Firebase Fehler:", e);
+      document.getElementById('statusText').textContent = "⚠️ Firebase nicht konfiguriert. Siehe Anleitung im Code.";
+    }
+
+    Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJlYWE1OWUxNy1mMWZiLTQzYjYtYTQ0OS1kMWFjYmFkNjc5YzciLCJpZCI6NTc3MzMsImlhdCI6MTYyNzg0NTE4Mn0.XcKpgANiY19MC4bdFUXMVEBToBmqS8kuYpUlxJHYZxk';
+
+    const viewer = new Cesium.Viewer('cesiumContainer', {
+      animation: false,
+      timeline: false,
+      baseLayerPicker: false,
+      geocoder: false,
+      homeButton: false,
+      sceneModePicker: false,
+      navigationHelpButton: false,
+      fullscreenButton: false,
+      vrButton: false,
+      infoBox: false,
+      selectionIndicator: false,
+      shadows: false,
+      terrain: Cesium.Terrain.fromWorldTerrain()
+    });
+
+    let trackingId = localStorage.getItem('trackingId') || 'track_' + Math.random().toString(36).substr(2, 9);
+    localStorage.setItem('trackingId', trackingId);
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const viewTrackingId = urlParams.get('track');
+    const isViewer = viewTrackingId && viewTrackingId !== trackingId;
+    const activeTrackingId = isViewer ? viewTrackingId : trackingId;
+
+    let positions = [];
+    let isTracking = false;
+    let watchId = null;
+    let currentPosition = null;
+    let userInteracting = false;
+    let lastUpdate = 0;
+
+    const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+    handler.setInputAction(function() { userInteracting = true; }, Cesium.ScreenSpaceEventType.LEFT_DOWN);
+    handler.setInputAction(function() { userInteracting = true; }, Cesium.ScreenSpaceEventType.WHEEL);
+    handler.setInputAction(function() { userInteracting = true; }, Cesium.ScreenSpaceEventType.PINCH_START);
+
+    function getSpeedColor(speedKmh) {
+      const maxSpeed = 30;
+      const normalized = Math.min(speedKmh / maxSpeed, 1);
+      
+      if (normalized < 0.33) {
+        const t = normalized / 0.33;
+        return Cesium.Color.fromCssColorString('rgb(' + Math.round(t * 255) + ', 255, 0)');
+      } else if (normalized < 0.66) {
+        const t = (normalized - 0.33) / 0.33;
+        return Cesium.Color.fromCssColorString('rgb(255, ' + Math.round(255 - t * 100) + ', 0)');
+      } else {
+        const t = (normalized - 0.66) / 0.34;
+        return Cesium.Color.fromCssColorString('rgb(255, ' + Math.round(155 - t * 155) + ', 0)');
+      }
+    }
+
+    function renderPositions(posArray) {
+      if (posArray.length === 0) return;
+      viewer.entities.removeAll();
+
+      for (let i = 0; i < posArray.length - 1; i++) {
+        const pos1 = Cesium.Cartesian3.fromDegrees(posArray[i].lon, posArray[i].lat, posArray[i].alt);
+        const pos2 = Cesium.Cartesian3.fromDegrees(posArray[i + 1].lon, posArray[i + 1].lat, posArray[i + 1].alt);
+        const speedKmh = posArray[i].speed * 3.6;
+        
+        viewer.entities.add({
+          polyline: {
+            positions: [pos1, pos2],
+            width: 5,
+            material: getSpeedColor(speedKmh),
+            clampToGround: true
+          }
+        });
+      }
+
+      posArray.forEach(function(p) {
+        const speedKmh = p.speed * 3.6;
+        viewer.entities.add({
+          position: Cesium.Cartesian3.fromDegrees(p.lon, p.lat, p.alt),
+          point: {
+            pixelSize: 8,
+            color: getSpeedColor(speedKmh),
+            outlineColor: Cesium.Color.WHITE,
+            outlineWidth: 2,
+            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND
+          }
+        });
+      });
+
+      if (!userInteracting && posArray.length > 0) {
+        const last = posArray[posArray.length - 1];
+        viewer.camera.setView({
+          destination: Cesium.Cartesian3.fromDegrees(last.lon, last.lat, 300),
+          orientation: {
+            heading: viewer.camera.heading,
+            pitch: Cesium.Math.toRadians(-70),
+            roll: 0.0
+          }
+        });
+      }
+    }
+
+    function savePosition(lat, lon, alt, speed) {
+      if (!database) return;
+      const posData = { lat: lat, lon: lon, alt: alt, speed: speed, timestamp: Date.now() };
+      positions.push(posData);
+      
+      database.ref('tracks/' + activeTrackingId + '/positions').set(positions);
+      database.ref('tracks/' + activeTrackingId + '/latest').set(posData);
+      
+      renderPositions(positions);
+    }
+
+    function startTracking() {
+      if (!navigator.geolocation) {
+        alert('GPS nicht verfügbar');
+        return;
+      }
+
+      isTracking = true;
+      updateUI();
+
+      watchId = navigator.geolocation.watchPosition(
+        function(position) {
+          const now = Date.now();
+          currentPosition = position;
+
+          if (now - lastUpdate >= 1000) {
+            const lat = position.coords.latitude;
+            const lon = position.coords.longitude;
+            const alt = position.coords.altitude || 0;
+            const speed = position.coords.speed || 0;
+
+            savePosition(lat, lon, alt, speed);
+
+            const speedKmh = (speed * 3.6).toFixed(1);
+            document.getElementById('statusText').innerHTML = 
+              'GPS aktiv<br>' +
+              'Speed: ' + speedKmh + ' km/h<br>' +
+              'Punkte: ' + positions.length;
+            
+            lastUpdate = now;
+          }
+        },
+        function(error) {
+          document.getElementById('statusText').textContent = 'GPS-Fehler: ' + error.message;
+          isTracking = false;
+          updateUI();
+        },
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+      );
+    }
+
+    function stopTracking() {
+      if (watchId) {
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+      }
+      isTracking = false;
+      updateUI();
+      document.getElementById('statusText').textContent = 'Tracking gestoppt';
+    }
+
+    function centerOnPosition() {
+      userInteracting = false;
+      if (positions.length > 0) {
+        const last = positions[positions.length - 1];
+        viewer.camera.flyTo({
+          destination: Cesium.Cartesian3.fromDegrees(last.lon, last.lat, 300),
+          orientation: {
+            heading: viewer.camera.heading,
+            pitch: Cesium.Math.toRadians(-70),
+            roll: 0.0
+          },
+          duration: 1.5
+        });
+      }
+    }
+
+    function resetTracking() {
+      if (confirm('Alle Trackingdaten löschen?')) {
+        positions = [];
+        viewer.entities.removeAll();
+        if (database) {
+          database.ref('tracks/' + activeTrackingId).remove();
+        }
+        document.getElementById('statusText').textContent = 'Zurückgesetzt';
+      }
+    }
+
+    function showShareModal() {
+      const link = window.location.origin + window.location.pathname + '?track=' + trackingId;
+      document.getElementById('shareLink').textContent = link;
+      document.getElementById('modal').classList.add('show');
+    }
+
+    function closeModal() {
+      document.getElementById('modal').classList.remove('show');
+    }
+
+    function copyLink() {
+      const link = window.location.origin + window.location.pathname + '?track=' + trackingId;
+      navigator.clipboard.writeText(link).then(function() {
+        alert('✅ Link kopiert!');
+        closeModal();
+      });
+    }
+
+    function updateUI() {
+      const controls = document.getElementById('controls');
+      controls.innerHTML = '';
+
+      if (isViewer) {
+        document.querySelector('#status .title').textContent = '👁️ Verfolgungs-Modus';
+        document.getElementById('trackingId').textContent = 'Tracking ID: ' + viewTrackingId;
+        
+        const centerBtn = document.createElement('button');
+        centerBtn.className = 'btn btn-center';
+        centerBtn.textContent = '🎯 Zentrieren';
+        centerBtn.onclick = centerOnPosition;
+        controls.appendChild(centerBtn);
+      } else {
+        document.querySelector('#status .title').textContent = '📍 Dein Tracker';
+        document.getElementById('trackingId').textContent = 'Deine ID: ' + trackingId;
+
+        if (!isTracking) {
+          const startBtn = document.createElement('button');
+          startBtn.className = 'btn btn-start';
+          startBtn.textContent = '▶️ Start';
+          startBtn.onclick = startTracking;
+          controls.appendChild(startBtn);
+        } else {
+          const stopBtn = document.createElement('button');
+          stopBtn.className = 'btn btn-stop';
+          stopBtn.textContent = '⏸️ Stop';
+          stopBtn.onclick = stopTracking;
+          controls.appendChild(stopBtn);
+        }
+
+        const centerBtn = document.createElement('button');
+        centerBtn.className = 'btn btn-center';
+        centerBtn.textContent = '🎯 Zentrieren';
+        centerBtn.onclick = centerOnPosition;
+        controls.appendChild(centerBtn);
+
+        const resetBtn = document.createElement('button');
+        resetBtn.className = 'btn btn-reset';
+        resetBtn.textContent = '🔄 Reset';
+        resetBtn.onclick = resetTracking;
+        controls.appendChild(resetBtn);
+
+        const shareBtn = document.createElement('button');
+        shareBtn.className = 'btn btn-share';
+        shareBtn.textContent = '📤 Teilen';
+        shareBtn.onclick = showShareModal;
+        controls.appendChild(shareBtn);
+      }
+    }
+
+    // Lade Positionen aus Firebase
+    if (database) {
+      database.ref('tracks/' + activeTrackingId + '/positions').on('value', function(snapshot) {
+        const data = snapshot.val();
+        if (data) {
+          positions = data;
+          renderPositions(positions);
+          
+          if (isViewer) {
+            document.getElementById('statusText').innerHTML = 
+              'Live-Tracking aktiv<br>' +
+              'Punkte: ' + positions.length;
+          }
+        }
+      });
+    }
+
+    updateUI();
+  </script>
+</body>
 </html>
