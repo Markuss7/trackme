@@ -173,8 +173,8 @@
   <div id="cesiumContainer"></div>
   
   <div id="version">
-    v1.0.3<br>
-    2025-01-27 02:47:33
+    v1.0.4<br>
+    2025-01-27 02:53:15
   </div>
   
   <div id="status">
@@ -312,6 +312,47 @@
       }
     }
 
+    // Echolot-Puls-Effekt
+    function addPulseEffect(lon, lat, alt) {
+      if (!viewer) return;
+      
+      const position = Cesium.Cartesian3.fromDegrees(lon, lat, alt);
+      const pulseEntity = viewer.entities.add({
+        position: position,
+        ellipse: {
+          semiMinorAxis: 1.0,
+          semiMajorAxis: 1.0,
+          height: 0,
+          material: Cesium.Color.CYAN.withAlpha(0.8),
+          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND
+        }
+      });
+
+      let startTime = Date.now();
+      let animationDuration = 2000; // 2 Sekunden
+      
+      function animate() {
+        let elapsed = Date.now() - startTime;
+        let progress = elapsed / animationDuration;
+        
+        if (progress >= 1.0) {
+          viewer.entities.remove(pulseEntity);
+          return;
+        }
+        
+        let radius = 1 + (progress * 50); // Von 1m bis 50m
+        let alpha = 0.8 * (1 - progress); // Fade out
+        
+        pulseEntity.ellipse.semiMinorAxis = radius;
+        pulseEntity.ellipse.semiMajorAxis = radius;
+        pulseEntity.ellipse.material = Cesium.Color.CYAN.withAlpha(alpha);
+        
+        requestAnimationFrame(animate);
+      }
+      
+      animate();
+    }
+
     function renderPositions(posArray) {
       if (!viewer || posArray.length === 0) return;
       viewer.entities.removeAll();
@@ -331,27 +372,34 @@
         });
       }
 
-      posArray.forEach(function(p) {
+      posArray.forEach(function(p, index) {
         const speedKmh = p.speed * 3.6;
+        const isLatest = index === posArray.length - 1;
+        
         viewer.entities.add({
           position: Cesium.Cartesian3.fromDegrees(p.lon, p.lat, p.alt),
           point: {
-            pixelSize: 8,
-            color: getSpeedColor(speedKmh),
+            pixelSize: isLatest ? 16 : 8,
+            color: isLatest ? Cesium.Color.CYAN : getSpeedColor(speedKmh),
             outlineColor: Cesium.Color.WHITE,
-            outlineWidth: 2,
+            outlineWidth: isLatest ? 3 : 2,
             heightReference: Cesium.HeightReference.CLAMP_TO_GROUND
           }
         });
+        
+        // Echolot-Animation für neuesten Punkt
+        if (isLatest) {
+          addPulseEffect(p.lon, p.lat, p.alt);
+        }
       });
 
       if (!userInteracting && posArray.length > 0) {
         const last = posArray[posArray.length - 1];
         viewer.camera.flyTo({
-          destination: Cesium.Cartesian3.fromDegrees(last.lon, last.lat, 500),
+          destination: Cesium.Cartesian3.fromDegrees(last.lon, last.lat, 1000),
           orientation: {
             heading: 0,
-            pitch: Cesium.Math.toRadians(-45),
+            pitch: Cesium.Math.toRadians(-90),
             roll: 0.0
           },
           duration: 0.5
@@ -425,10 +473,10 @@
       if (positions.length > 0 && viewer) {
         const last = positions[positions.length - 1];
         viewer.camera.flyTo({
-          destination: Cesium.Cartesian3.fromDegrees(last.lon, last.lat, 500),
+          destination: Cesium.Cartesian3.fromDegrees(last.lon, last.lat, 1000),
           orientation: {
             heading: 0,
-            pitch: Cesium.Math.toRadians(-45),
+            pitch: Cesium.Math.toRadians(-90),
             roll: 0.0
           },
           duration: 1.5
@@ -437,10 +485,10 @@
         const lat = currentPosition.coords.latitude;
         const lon = currentPosition.coords.longitude;
         viewer.camera.flyTo({
-          destination: Cesium.Cartesian3.fromDegrees(lon, lat, 500),
+          destination: Cesium.Cartesian3.fromDegrees(lon, lat, 1000),
           orientation: {
             heading: 0,
-            pitch: Cesium.Math.toRadians(-45),
+            pitch: Cesium.Math.toRadians(-90),
             roll: 0.0
           },
           duration: 1.5
