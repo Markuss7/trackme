@@ -7,6 +7,9 @@
   <script src="https://cesium.com/downloads/cesiumjs/releases/1.95/Build/Cesium/Cesium.js"></script>
   <link href="https://cesium.com/downloads/cesiumjs/releases/1.95/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
   
+  <!-- QR Code Generator -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  
   <!-- Firebase -->
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
@@ -167,15 +170,55 @@
       background: #e5e7eb;
       color: #333;
     }
+    #compassBtn {
+      position: absolute;
+      bottom: 140px;
+      right: 20px;
+      width: 60px;
+      height: 60px;
+      background: rgba(255, 255, 255, 0.95);
+      border: 3px solid #333;
+      border-radius: 50%;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      font-weight: bold;
+      color: #e74c3c;
+      transition: all 0.2s;
+    }
+    #compassBtn:hover {
+      transform: scale(1.05);
+      background: rgba(255, 255, 255, 1);
+    }
+    #compassBtn:active {
+      transform: scale(0.95);
+    }
+    #qrContainer {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+    }
+    #qrcode {
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+    }
   </style>
 </head>
 <body>
   <div id="cesiumContainer"></div>
   
   <div id="version">
-    v1.0.4<br>
-    2025-01-27 02:53:15
+    v1.0.5<br>
+    2025-01-27 03:01:42
   </div>
+  
+  <button id="compassBtn" title="Nach Norden ausrichten">N</button>
   
   <div id="status">
     <div class="title">🔄 Initialisiere...</div>
@@ -190,6 +233,9 @@
       <div class="modal-title">📤 Link zum Teilen</div>
       <div class="modal-text">Teile diesen Link, damit andere deine Live-Position sehen können:</div>
       <div class="link-box" id="shareLink"></div>
+      <div id="qrContainer">
+        <div id="qrcode"></div>
+      </div>
       <div class="modal-buttons">
         <button class="modal-btn modal-btn-primary" onclick="copyLink()">📋 Link kopieren</button>
         <button class="modal-btn modal-btn-secondary" onclick="closeModal()">Schließen</button>
@@ -274,6 +320,21 @@
       handler.setInputAction(function() { userInteracting = true; }, Cesium.ScreenSpaceEventType.LEFT_DOWN);
       handler.setInputAction(function() { userInteracting = true; }, Cesium.ScreenSpaceEventType.WHEEL);
       handler.setInputAction(function() { userInteracting = true; }, Cesium.ScreenSpaceEventType.PINCH_START);
+
+      // Kompass-Button Event
+      document.getElementById('compassBtn').addEventListener('click', function() {
+        if (viewer) {
+          viewer.camera.flyTo({
+            destination: viewer.camera.position,
+            orientation: {
+              heading: 0,
+              pitch: Cesium.Math.toRadians(-90),
+              roll: 0.0
+            },
+            duration: 1.0
+          });
+        }
+      });
 
       // UI aktualisieren
       updateUI();
@@ -510,6 +571,20 @@
     function showShareModal() {
       const link = window.location.origin + window.location.pathname + '?track=' + trackingId;
       document.getElementById('shareLink').textContent = link;
+      
+      // QR Code generieren
+      const qrcodeContainer = document.getElementById('qrcode');
+      qrcodeContainer.innerHTML = ''; // Alte QR-Codes löschen
+      
+      new QRCode(qrcodeContainer, {
+        text: link,
+        width: 256,
+        height: 256,
+        colorDark: '#000000',
+        colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.H
+      });
+      
       document.getElementById('modal').classList.add('show');
     }
 
