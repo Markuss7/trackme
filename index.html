@@ -58,6 +58,18 @@
       margin-top: 8px;
       word-break: break-all;
     }
+    #version {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(0, 0, 0, 0.85);
+      color: white;
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 11px;
+      z-index: 1000;
+      font-family: monospace;
+    }
     #controls {
       position: absolute;
       bottom: 20px;
@@ -160,6 +172,11 @@
 <body>
   <div id="cesiumContainer"></div>
   
+  <div id="version">
+    v1.0.3<br>
+    2025-01-27 02:47:33
+  </div>
+  
   <div id="status">
     <div class="title">🔄 Initialisiere...</div>
     <div id="statusText"></div>
@@ -221,10 +238,10 @@
         document.getElementById('statusText').textContent = "⚠️ Firebase nicht konfiguriert";
       }
 
-      // Cesium Token
-      Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJlYWE1OWUxNy1mMWZiLTQzYjYtYTQ0OS1kMWFjYmFkNjc5YzciLCJpZCI6NTc3MzMsImlhdCI6MTYyNzg0NTE4Mn0.XcKpgANiY19MC4bdFUXMVEBToBmqS8kuYpUlxJHYZxk';
+      // Cesium Token - Aktualisierter öffentlicher Token
+      Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJmMTRjYzBkZS1hY2JkLTRlMjctYjU5Yi0xODY1MjQzODNmMjkiLCJpZCI6MjU5LCJpYXQiOjE3MjgzNzQ4MzB9.L4TMLu_TTZKOTQH9HpBnVDTp1Vqvlhk9P4oNGKP_1OA';
 
-      // Cesium Viewer erstellen
+      // Cesium Viewer erstellen mit Basis-Imagery
       viewer = new Cesium.Viewer('cesiumContainer', {
         animation: false,
         timeline: false,
@@ -238,11 +255,19 @@
         infoBox: false,
         selectionIndicator: false,
         shadows: false,
-        imageryProvider: new Cesium.IonImageryProvider({ assetId: 2 })
+        terrainProvider: new Cesium.EllipsoidTerrainProvider(),
+        imageryProvider: new Cesium.OpenStreetMapImageryProvider({
+          url: 'https://a.tile.openstreetmap.org/'
+        })
       });
 
       // Entferne Cesium Logo und Credits für bessere Sicht
       viewer.cesiumWidget.creditContainer.style.display = "none";
+      
+      // Setze initiale Kamera-Position (Global view)
+      viewer.camera.setView({
+        destination: Cesium.Cartesian3.fromDegrees(10.0, 50.0, 10000000)
+      });
 
       // Interaktions-Handler
       const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
