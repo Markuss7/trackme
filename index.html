@@ -75,7 +75,7 @@
     }
     #controls {
       position: absolute;
-      bottom: 20px;
+      bottom: 100px;
       left: 50%;
       transform: translateX(-50%);
       display: flex;
@@ -172,7 +172,7 @@
     }
     #compassBtn {
       position: absolute;
-      bottom: 140px;
+      bottom: 190px;
       right: 20px;
       width: 60px;
       height: 60px;
@@ -286,8 +286,8 @@
   <div id="cesiumContainer"></div>
   
   <div id="version">
-    v1.0.6<br>
-    2025-01-27 03:15:28
+    v1.0.7<br>
+    2025-01-27 03:22:11
   </div>
   
   <button id="compassBtn" title="Nach Norden ausrichten">N</button>
@@ -355,6 +355,8 @@
     let isTimelinePlaying = true;
     let timelineIndex = -1;
     let gpsBuffer = [];
+    let userZoomLevel = 1000; // Default 1000m
+    let defaultZoomLevel = 1000;
 
     // Warte bis alles geladen ist
     window.addEventListener('load', function() {
@@ -401,13 +403,33 @@
 
       // Interaktions-Handler
       const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
-      handler.setInputAction(function() { userInteracting = true; }, Cesium.ScreenSpaceEventType.LEFT_DOWN);
-      handler.setInputAction(function() { userInteracting = true; }, Cesium.ScreenSpaceEventType.WHEEL);
-      handler.setInputAction(function() { userInteracting = true; }, Cesium.ScreenSpaceEventType.PINCH_START);
+      
+      handler.setInputAction(function() { 
+        userInteracting = true; 
+      }, Cesium.ScreenSpaceEventType.LEFT_DOWN);
+      
+      handler.setInputAction(function() { 
+        userInteracting = true;
+        // Speichere aktuellen Zoom-Level
+        const cameraHeight = viewer.camera.positionCartographic.height;
+        userZoomLevel = cameraHeight;
+      }, Cesium.ScreenSpaceEventType.WHEEL);
+      
+      handler.setInputAction(function() { 
+        userInteracting = true; 
+      }, Cesium.ScreenSpaceEventType.PINCH_START);
+      
+      handler.setInputAction(function() {
+        // Speichere Zoom-Level nach Pinch
+        const cameraHeight = viewer.camera.positionCartographic.height;
+        userZoomLevel = cameraHeight;
+      }, Cesium.ScreenSpaceEventType.PINCH_END);
 
       // Kompass-Button Event
       document.getElementById('compassBtn').addEventListener('click', function() {
         if (viewer) {
+          // Reset auf Default-Zoom
+          userZoomLevel = defaultZoomLevel;
           viewer.camera.flyTo({
             destination: viewer.camera.position,
             orientation: {
@@ -571,9 +593,10 @@
       document.getElementById('timelineInfo').textContent = 
         'Punkt ' + (index + 1) + ' von ' + positions.length + ' | ' + speedKmh + ' km/h';
       
-      // Kamera zentrieren
+      // Kamera zentrieren mit aktuellem Zoom-Level (näher ran bei Timeline)
+      const timelineZoom = Math.min(userZoomLevel, 300); // Max 300m für Timeline
       viewer.camera.flyTo({
-        destination: Cesium.Cartesian3.fromDegrees(pos.lon, pos.lat, 1000),
+        destination: Cesium.Cartesian3.fromDegrees(pos.lon, pos.lat, timelineZoom),
         orientation: {
           heading: 0,
           pitch: Cesium.Math.toRadians(-90),
@@ -653,7 +676,7 @@
       if (!userInteracting && posArray.length > 0 && highlightIndex === undefined) {
         const last = posArray[posArray.length - 1];
         viewer.camera.flyTo({
-          destination: Cesium.Cartesian3.fromDegrees(last.lon, last.lat, 1000),
+          destination: Cesium.Cartesian3.fromDegrees(last.lon, last.lat, userZoomLevel),
           orientation: {
             heading: 0,
             pitch: Cesium.Math.toRadians(-90),
@@ -740,10 +763,12 @@
 
     function centerOnPosition() {
       userInteracting = false;
+      userZoomLevel = defaultZoomLevel; // Reset auf Default-Zoom
+      
       if (positions.length > 0 && viewer) {
         const last = positions[positions.length - 1];
         viewer.camera.flyTo({
-          destination: Cesium.Cartesian3.fromDegrees(last.lon, last.lat, 1000),
+          destination: Cesium.Cartesian3.fromDegrees(last.lon, last.lat, userZoomLevel),
           orientation: {
             heading: 0,
             pitch: Cesium.Math.toRadians(-90),
@@ -755,7 +780,7 @@
         const lat = currentPosition.coords.latitude;
         const lon = currentPosition.coords.longitude;
         viewer.camera.flyTo({
-          destination: Cesium.Cartesian3.fromDegrees(lon, lat, 1000),
+          destination: Cesium.Cartesian3.fromDegrees(lon, lat, userZoomLevel),
           orientation: {
             heading: 0,
             pitch: Cesium.Math.toRadians(-90),
