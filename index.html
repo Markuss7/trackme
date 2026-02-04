@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-  <title>Live GPS Tracker live</title>
+  <title>Live GPS Tracker</title>
   <script src="https://cesium.com/downloads/cesiumjs/releases/1.95/Build/Cesium/Cesium.js"></script>
   <link href="https://cesium.com/downloads/cesiumjs/releases/1.95/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
   
@@ -208,17 +208,98 @@
       padding: 20px;
       border-radius: 10px;
     }
+    #timeline {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: rgba(0, 0, 0, 0.9);
+      padding: 15px 20px;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    #timelineControls {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+    #timelineSlider {
+      flex: 1;
+      height: 8px;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.2);
+      outline: none;
+      -webkit-appearance: none;
+      cursor: pointer;
+    }
+    #timelineSlider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #00bcd4;
+      cursor: pointer;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    }
+    #timelineSlider::-moz-range-thumb {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #00bcd4;
+      cursor: pointer;
+      border: none;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    }
+    #timelineTime {
+      color: white;
+      font-size: 14px;
+      font-weight: bold;
+      min-width: 120px;
+      text-align: center;
+      font-family: monospace;
+    }
+    #timelinePlayBtn {
+      background: #00bcd4;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: bold;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    #timelinePlayBtn:hover {
+      background: #00acc1;
+    }
+    #timelineInfo {
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 12px;
+      text-align: center;
+    }
   </style>
 </head>
 <body>
   <div id="cesiumContainer"></div>
   
   <div id="version">
-    v1.0.5<br>
-    2025-01-27 03:01:42
+    v1.0.6<br>
+    2025-01-27 03:15:28
   </div>
   
   <button id="compassBtn" title="Nach Norden ausrichten">N</button>
+  
+  <div id="timeline">
+    <div id="timelineControls">
+      <button id="timelinePlayBtn">▶ Live</button>
+      <div id="timelineTime">--:--:--</div>
+      <input type="range" id="timelineSlider" min="0" max="100" value="100" step="1">
+    </div>
+    <div id="timelineInfo">Keine Trackingdaten</div>
+  </div>
   
   <div id="status">
     <div class="title">🔄 Initialisiere...</div>
@@ -271,6 +352,9 @@
     let currentPosition = null;
     let userInteracting = false;
     let lastUpdate = 0;
+    let isTimelinePlaying = true;
+    let timelineIndex = -1;
+    let gpsBuffer = [];
 
     // Warte bis alles geladen ist
     window.addEventListener('load', function() {
@@ -333,6 +417,30 @@
             },
             duration: 1.0
           });
+        }
+      });
+
+      // Timeline Events
+      const timelineSlider = document.getElementById('timelineSlider');
+      const timelinePlayBtn = document.getElementById('timelinePlayBtn');
+      
+      timelineSlider.addEventListener('input', function() {
+        isTimelinePlaying = false;
+        timelinePlayBtn.textContent = '▶ Live';
+        const index = parseInt(this.value);
+        showTimelinePosition(index);
+      });
+      
+      timelinePlayBtn.addEventListener('click', function() {
+        isTimelinePlaying = !isTimelinePlaying;
+        if (isTimelinePlaying) {
+          this.textContent = '⏸ Pause';
+          timelineSlider.value = positions.length - 1;
+          if (positions.length > 0) {
+            showTimelinePosition(positions.length - 1);
+          }
+        } else {
+          this.textContent = '▶ Live';
         }
       });
 
@@ -414,7 +522,94 @@
       animate();
     }
 
-    function renderPositions(posArray) {
+    // GPS-Glättung mit Moving Average
+    function smoothGPSPosition(lat, lon, accuracy) {
+      // Nur genaue Messungen verwenden (< 50m Genauigkeit)
+      if (accuracy > 50) {
+        return null;
+      }
+      
+      gpsBuffer.push({ lat: lat, lon: lon, accuracy: accuracy });
+      
+      // Behalte nur die letzten 5 Messungen
+      if (gpsBuffer.length > 5) {
+        gpsBuffer.shift();
+      }
+      
+      // Gewichteter Durchschnitt (genauere Messungen haben mehr Gewicht)
+      let totalWeight = 0;
+      let weightedLat = 0;
+      let weightedLon = 0;
+      
+      gpsBuffer.forEach(function(point) {
+        const weight = 1 / point.accuracy; // Bessere Genauigkeit = höheres Gewicht
+        weightedLat += point.lat * weight;
+        weightedLon += point.lon * weight;
+        totalWeight += weight;
+      });
+      
+      return {
+        lat: weightedLat / totalWeight,
+        lon: weightedLon / totalWeight
+      };
+    }
+
+    // Timeline Position anzeigen
+    function showTimelinePosition(index) {
+      if (index < 0 || index >= positions.length || !viewer) return;
+      
+      timelineIndex = index;
+      const pos = positions[index];
+      
+      // Uhrzeit anzeigen
+      const date = new Date(pos.timestamp);
+      const timeStr = date.toLocaleTimeString('de-DE');
+      document.getElementById('timelineTime').textContent = timeStr;
+      
+      // Info anzeigen
+      const speedKmh = (pos.speed * 3.6).toFixed(1);
+      document.getElementById('timelineInfo').textContent = 
+        'Punkt ' + (index + 1) + ' von ' + positions.length + ' | ' + speedKmh + ' km/h';
+      
+      // Kamera zentrieren
+      viewer.camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(pos.lon, pos.lat, 1000),
+        orientation: {
+          heading: 0,
+          pitch: Cesium.Math.toRadians(-90),
+          roll: 0.0
+        },
+        duration: 0.5
+      });
+      
+      // Highlight diesen Punkt
+      renderPositions(positions, index);
+    }
+
+    // Update Timeline
+    function updateTimeline() {
+      if (positions.length === 0) {
+        document.getElementById('timelineInfo').textContent = 'Keine Trackingdaten';
+        document.getElementById('timelineTime').textContent = '--:--:--';
+        return;
+      }
+      
+      const slider = document.getElementById('timelineSlider');
+      slider.max = positions.length - 1;
+      
+      if (isTimelinePlaying) {
+        slider.value = positions.length - 1;
+        const lastPos = positions[positions.length - 1];
+        const date = new Date(lastPos.timestamp);
+        document.getElementById('timelineTime').textContent = date.toLocaleTimeString('de-DE');
+        
+        const speedKmh = (lastPos.speed * 3.6).toFixed(1);
+        document.getElementById('timelineInfo').textContent = 
+          'Live-Tracking | ' + positions.length + ' Punkte | ' + speedKmh + ' km/h';
+      }
+    }
+
+    function renderPositions(posArray, highlightIndex) {
       if (!viewer || posArray.length === 0) return;
       viewer.entities.removeAll();
 
@@ -436,25 +631,26 @@
       posArray.forEach(function(p, index) {
         const speedKmh = p.speed * 3.6;
         const isLatest = index === posArray.length - 1;
+        const isHighlighted = highlightIndex !== undefined && index === highlightIndex;
         
         viewer.entities.add({
           position: Cesium.Cartesian3.fromDegrees(p.lon, p.lat, p.alt),
           point: {
-            pixelSize: isLatest ? 16 : 8,
-            color: isLatest ? Cesium.Color.CYAN : getSpeedColor(speedKmh),
+            pixelSize: isHighlighted ? 20 : (isLatest ? 16 : 8),
+            color: isHighlighted ? Cesium.Color.YELLOW : (isLatest ? Cesium.Color.CYAN : getSpeedColor(speedKmh)),
             outlineColor: Cesium.Color.WHITE,
-            outlineWidth: isLatest ? 3 : 2,
+            outlineWidth: isHighlighted ? 4 : (isLatest ? 3 : 2),
             heightReference: Cesium.HeightReference.CLAMP_TO_GROUND
           }
         });
         
-        // Echolot-Animation für neuesten Punkt
-        if (isLatest) {
+        // Echolot-Animation nur für neuesten Punkt im Live-Modus
+        if (isLatest && isTimelinePlaying && highlightIndex === undefined) {
           addPulseEffect(p.lon, p.lat, p.alt);
         }
       });
 
-      if (!userInteracting && posArray.length > 0) {
+      if (!userInteracting && posArray.length > 0 && highlightIndex === undefined) {
         const last = posArray[posArray.length - 1];
         viewer.camera.flyTo({
           destination: Cesium.Cartesian3.fromDegrees(last.lon, last.lat, 1000),
@@ -466,6 +662,8 @@
           duration: 0.5
         });
       }
+      
+      updateTimeline();
     }
 
     function savePosition(lat, lon, alt, speed) {
@@ -498,14 +696,25 @@
             const lon = position.coords.longitude;
             const alt = position.coords.altitude || 0;
             const speed = position.coords.speed || 0;
+            const accuracy = position.coords.accuracy;
 
-            savePosition(lat, lon, alt, speed);
+            // GPS-Glättung anwenden
+            const smoothed = smoothGPSPosition(lat, lon, accuracy);
+            
+            if (smoothed) {
+              savePosition(smoothed.lat, smoothed.lon, alt, speed);
 
-            const speedKmh = (speed * 3.6).toFixed(1);
-            document.getElementById('statusText').innerHTML = 
-              'GPS aktiv<br>' +
-              'Speed: ' + speedKmh + ' km/h<br>' +
-              'Punkte: ' + positions.length;
+              const speedKmh = (speed * 3.6).toFixed(1);
+              document.getElementById('statusText').innerHTML = 
+                'GPS aktiv<br>' +
+                'Speed: ' + speedKmh + ' km/h<br>' +
+                'Genauigkeit: ±' + Math.round(accuracy) + 'm<br>' +
+                'Punkte: ' + positions.length;
+            } else {
+              document.getElementById('statusText').innerHTML = 
+                'GPS aktiv (warte auf präzise Messung)<br>' +
+                'Genauigkeit: ±' + Math.round(accuracy) + 'm (zu ungenau)';
+            }
             
             lastUpdate = now;
           }
